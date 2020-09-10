@@ -60,12 +60,14 @@ LEFT JOIN (SELECT university AS la_university,
            FROM rdw_la.vw_master_alluser_activities
            WHERE activity_type IN ('hsuforum', 'forum')
            AND user_role = 'student'
-           AND (LOWER(activity_name) LIKE '%discussion forum%' OR LOWER(activity_name) LIKE '%class-wide%')
-           AND LOWER(activity_name) NOT LIKE '%small-group%'
-           AND LOWER(activity_name) NOT LIKE '%small group%'
-           AND LOWER(activity_name) NOT LIKE '%graded%'
-           AND LOWER(activity_name) NOT LIKE '%practical exercise%'
-           AND LOWER(activity_name) NOT LIKE '%final assignment%'
+           AND (LOWER(activity_name) LIKE '%class-wide%' OR LOWER(activity_name) LIKE '%class wide%')
+           AND LOWER(module_name) NOT LIKE '%orientation%'
+           --AND (LOWER(activity_name) LIKE '%discussion forum%' OR LOWER(activity_name) LIKE '%class-wide%')
+           --AND LOWER(activity_name) NOT LIKE '%small-group%'
+           --AND LOWER(activity_name) NOT LIKE '%small group%'
+           --AND LOWER(activity_name) NOT LIKE '%graded%'
+           --AND LOWER(activity_name) NOT LIKE '%practical exercise%'
+           --AND LOWER(activity_name) NOT LIKE '%final assignment%'
            GROUP BY university,
                     course_id,
                     user_id,
@@ -739,3 +741,75 @@ fig_tec_lea.write_image('/Users/jdeswardt/Documents/projects/discussion_forum_dr
 
 
 ################################################################################################################################################################
+#7.) MODULE LEVEL ANALYSIS
+
+##7.1) Extract data
+##Connect to database
+rdw_conn = psycopg2.connect(user=config['USER_LA']['RDW_PROD'],
+                            password=config['PWD_LA']['RDW_PROD'],
+                            host=config['HOST']['RDW_STAG'],
+                            database='rdw')
+
+##Sql query
+sql = """
+SELECT A.university AS la_university,
+       A.course_name AS presentation_abbreviation,
+       A.course_id AS vle_course_id,
+       A.course_module_id,
+       A.module_name,
+       A.activity_name,
+       A.user_id AS vle_user_id,
+       A.user_role,
+       CONCAT(A.firstname, ' ', A.lastname) AS student_name,
+       B.module_grade,
+       SUM(all_posts) AS number_of_posts
+FROM rdw_la.vw_master_alluser_activities A
+LEFT JOIN rdw_la.vw_module_grades B ON B.user_id = A.user_id
+                                    AND B.course_id = A.course_id
+                                    AND B.course_module_id = A.course_module_id
+WHERE A.activity_type IN ('hsuforum', 'forum')
+AND A.user_role = 'student'
+AND (LOWER(A.activity_name) LIKE '%discussion forum%' OR LOWER(A.activity_name) LIKE '%class-wide%')
+AND LOWER(A.activity_name) NOT LIKE '%small-group%'
+AND LOWER(A.activity_name) NOT LIKE '%small group%'
+AND LOWER(A.activity_name) NOT LIKE '%graded%'
+AND LOWER(A.activity_name) NOT LIKE '%practical exercise%'
+AND LOWER(A.activity_name) NOT LIKE '%final assignment%'
+AND LOWER(A.activity_name) NOT LIKE '%orientation%'
+AND B.module_grade IS NOT NULL
+GROUP BY A.university,
+         A.course_name,
+         A.course_id,
+         A.course_module_id,
+         A.module_name,
+         A.activity_name,
+         A.user_id,
+         A.user_role,
+         CONCAT(A.firstname, ' ', A.lastname),
+         B.module_grade;
+"""
+
+##Create pandas dataframe
+df_modules = pandas.read_sql_query(sql, rdw_conn)
+
+##Concatenate two strings
+df_modules['course_module'] = df_modules['presentation_abbreviation'].map(str) + ' ' + df_modules['module_name']
+
+##2.2) Clean data
+##Clean df_extract
+df_modules = df_modules.fillna(0)
+df_modules['module_grade'].values[df_modules['module_grade'].values > 100] = 100
+print(df_modules.head(20))
+print('Number of Total Students:', len(df_modules))
+
+##Calculate correlation for each course abbreviation
+df_corr_modules = pandas.DataFrame(df_modules.groupby('course_module')[['module_grade', 'number_of_posts']].corr().iloc[0::2,-1]).reset_index()
+
+##Edit resulting dataframe
+df_corr_modules = df_corr_modules[['course_module', 'number_of_posts']]
+df_corr_modules = df_corr_modules.rename(columns={'number_of_posts': 'r_squared'})
+df_corr_modules['r_squared'] = df_corr_modules['r_squared'] ** 2
+df_corr_modules = df_corr_modules.sort_values(by='r_squared', ascending=False)
+
+
+df_corr_modules.to_csv('/Users/jdeswardt/Documents/projects/discussion_forum_driver_analysis/test.csv')
