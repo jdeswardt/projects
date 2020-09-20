@@ -39,6 +39,8 @@ SELECT B.university,
        B.presentation_abbreviation,
        A.vle_course_id,
        B.presentation_start_date,
+       E.activity_type,
+       E.activity_name,
        B.course_type,
        B.subject_vertical,
        B.customer_tribe,
@@ -54,22 +56,20 @@ LEFT JOIN rdw_bcd.vw_bcd_partner D ON D.vle_credential_id = C.vle_credential_id
 LEFT JOIN (SELECT university AS la_university,
                   course_id AS vle_course_id,
                   user_id AS vle_user_id,
+                  activity_type,
+                  activity_name,
                   user_role,
                   CONCAT(firstname, ' ', lastname) AS student_name,
                   SUM(all_posts) AS number_of_posts
            FROM rdw_la.vw_master_alluser_activities
-           WHERE activity_type IN ('hsuforum', 'forum')
-           AND user_role = 'student'
-           AND (LOWER(activity_name) LIKE '%class-wide%' OR LOWER(activity_name) LIKE '%class wide%')
+           WHERE user_role = 'student'
+           AND (LOWER(activity_name) LIKE '%class-wide%'
+                OR LOWER(activity_name) LIKE '%class wide%')
            AND LOWER(module_name) NOT LIKE '%orientation%'
-           --AND (LOWER(activity_name) LIKE '%discussion forum%' OR LOWER(activity_name) LIKE '%class-wide%')
-           --AND LOWER(activity_name) NOT LIKE '%small-group%'
-           --AND LOWER(activity_name) NOT LIKE '%small group%'
-           --AND LOWER(activity_name) NOT LIKE '%graded%'
-           --AND LOWER(activity_name) NOT LIKE '%practical exercise%'
-           --AND LOWER(activity_name) NOT LIKE '%final assignment%'
            GROUP BY university,
                     course_id,
+                    activity_type,
+                    activity_name,
                     user_id,
                     user_role,
                     CONCAT(firstname, ' ', lastname)) E ON E.la_university = D.la_university
