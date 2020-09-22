@@ -813,3 +813,121 @@ df_corr_modules = df_corr_modules.sort_values(by='r_squared', ascending=False)
 
 
 df_corr_modules.to_csv('/Users/jdeswardt/Documents/projects/discussion_forum_driver_analysis/test.csv')
+
+################################################################################################################################################################
+##10.) CREATE DATA SOURCES
+
+##Presentation module level
+##First do at student level to calculate correlations
+##Then join correlations back to presentation module level
+
+##10.1) Presentation Module Level
+
+##Base table
+##Connect to database
+rdw_conn = psycopg2.connect(user=config['USER_LA']['RDW_PROD'],
+                            password=config['PWD_LA']['RDW_PROD'],
+                            host=config['HOST']['RDW_STAG'],
+                            database='rdw')
+
+##Sql query
+sql = """
+SELECT A.university AS la_university,
+       A.course_name AS presentation_abbreviation,
+       A.course_id AS vle_course_id,
+       A.course_module_id,
+       A.module_name,
+       ROUND(AVG(B.module_grade), 2) AS average_grade,
+       SUM(all_posts) AS number_of_posts
+FROM rdw_la.vw_master_alluser_activities A
+LEFT JOIN rdw_la.vw_module_grades B ON B.user_id = A.user_id
+                                    AND B.course_id = A.course_id
+                                    AND B.course_module_id = A.course_module_id
+WHERE A.activity_type IN ('hsuforum', 'forum')
+AND A.user_role = 'student'
+AND (LOWER(A.activity_name) LIKE '%forum%' OR LOWER(A.activity_name) LIKE '%discussion%')
+AND LOWER(A.activity_name) NOT LIKE '%small-group%'
+AND LOWER(A.activity_name) NOT LIKE '%small group%'
+AND LOWER(A.activity_name) NOT LIKE '%graded%'
+AND LOWER(A.activity_name) NOT LIKE '%practical exercise%'
+AND LOWER(A.activity_name) NOT LIKE '%final assignment%'
+AND LOWER(A.activity_name) NOT LIKE '%orientation%'
+AND B.module_grade IS NOT NULL
+GROUP BY A.university,
+         A.course_name,
+         A.course_id,
+         A.course_module_id,
+         A.module_name;
+"""
+
+##Create pandas dataframe
+df_pres_mod_base = pandas.read_sql_query(sql, rdw_conn)
+
+##Correlation creation
+##Connect to database
+rdw_conn = psycopg2.connect(user=config['USER_LA']['RDW_PROD'],
+                            password=config['PWD_LA']['RDW_PROD'],
+                            host=config['HOST']['RDW_STAG'],
+                            database='rdw')
+
+##Sql query
+sql = """
+SELECT A.university AS la_university,
+       A.course_name AS presentation_abbreviation,
+       A.course_id AS vle_course_id,
+       A.course_module_id,
+       A.module_name,
+       A.activity_name,
+       A.user_id AS vle_user_id,
+       A.user_role,
+       CONCAT(A.firstname, ' ', A.lastname) AS student_name,
+       B.module_grade,
+       SUM(all_posts) AS number_of_posts
+FROM rdw_la.vw_master_alluser_activities A
+LEFT JOIN rdw_la.vw_module_grades B ON B.user_id = A.user_id
+                                    AND B.course_id = A.course_id
+                                    AND B.course_module_id = A.course_module_id
+WHERE A.activity_type IN ('hsuforum', 'forum')
+AND A.user_role = 'student'
+AND (LOWER(A.activity_name) LIKE '%forum%' OR LOWER(A.activity_name) LIKE '%discussion%')
+AND LOWER(A.activity_name) NOT LIKE '%small-group%'
+AND LOWER(A.activity_name) NOT LIKE '%small group%'
+AND LOWER(A.activity_name) NOT LIKE '%graded%'
+AND LOWER(A.activity_name) NOT LIKE '%practical exercise%'
+AND LOWER(A.activity_name) NOT LIKE '%final assignment%'
+AND LOWER(A.activity_name) NOT LIKE '%orientation%'
+AND B.module_grade IS NOT NULL
+GROUP BY A.university,
+         A.course_name,
+         A.course_id,
+         A.course_module_id,
+         A.module_nr_from_name,
+         A.module_name,
+         A.activity_name,
+         A.user_id,
+         A.user_role,
+         CONCAT(A.firstname, ' ', A.lastname),
+         B.module_grade;
+"""
+
+##Create pandas dataframe
+df_pres_mod = pandas.read_sql_query(sql, rdw_conn)
+
+##Concatenate two strings
+df_pres_mod['presentation_module'] = df_pres_mod['presentation_abbreviation'].map(str) + ' ' + df_pres_mod['module_name']
+
+##Clean df_extract
+df_pres_mod = df_pres_mod.fillna(0)
+df_pres_mod['module_grade'].values[df_pres_mod['module_grade'].values > 100] = 100
+print(df_pres_mod.head(20))
+
+##Calculate correlation for each course abbreviation
+df_corr_pres_mod = pandas.DataFrame(df_pres_mod.groupby('presentation_module')[['module_grade', 'number_of_posts']].corr().iloc[0::2,-1]).reset_index()
+
+##Edit resulting dataframe
+df_corr_pres_mod = df_corr_pres_mod[['presentation_module', 'number_of_posts']]
+df_corr_pres_mod = df_corr_pres_mod.rename(columns={'number_of_posts': 'r_squared'})
+df_corr_pres_mod['r_squared'] = df_corr_pres_mod['r_squared'] ** 2
+df_corr_pres_mod = df_corr_pres_mod.sort_values(by='r_squared', ascending=False)
+
+##Join to base table
