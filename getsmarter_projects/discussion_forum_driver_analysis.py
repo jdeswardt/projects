@@ -815,15 +815,13 @@ df_corr_modules = df_corr_modules.sort_values(by='r_squared', ascending=False)
 df_corr_modules.to_csv('/Users/jdeswardt/Documents/projects/discussion_forum_driver_analysis/test.csv')
 
 ################################################################################################################################################################
-##10.) CREATE DATA SOURCES
+##10.) PRESENTATION MODULE LEVEL
 
 ##Presentation module level
 ##First do at student level to calculate correlations
 ##Then join correlations back to presentation module level
 
-##10.1) Presentation Module Level
-
-##Base table
+##10.1) Base table
 ##Connect to database
 rdw_conn = psycopg2.connect(user=config['USER_LA']['RDW_PROD'],
                             password=config['PWD_LA']['RDW_PROD'],
@@ -864,6 +862,14 @@ GROUP BY A.university,
 df_pres_mod_base = pandas.read_sql_query(sql, rdw_conn)
 print(df_pres_mod_base.head(20))
 
+##Concatenate two strings
+df_pres_mod_base['presentation_module'] = df_pres_mod_base['presentation_abbreviation'].map(str) + ' ' + df_pres_mod_base['module_name']
+print(df_pres_mod_base.head(20))
+
+##Select specific columns
+df_pres_mod_base = df_pres_mod_base[['presentation_module', 'number_of_posts', 'average_grade']]
+print(df_pres_mod_base.head(20))
+
 ##Correlation creation
 ##Connect to database
 rdw_conn = psycopg2.connect(user=config['USER_LA']['RDW_PROD'],
@@ -878,7 +884,6 @@ SELECT A.university AS la_university,
        A.course_id AS vle_course_id,
        A.course_module_id,
        A.module_name,
-       A.activity_name,
        A.user_id AS vle_user_id,
        A.user_role,
        CONCAT(A.firstname, ' ', A.lastname) AS student_name,
@@ -904,7 +909,6 @@ GROUP BY A.university,
          A.course_module_id,
          A.module_nr_from_name,
          A.module_name,
-         A.activity_name,
          A.user_id,
          A.user_role,
          CONCAT(A.firstname, ' ', A.lastname),
@@ -930,14 +934,14 @@ df_corr_pres_mod = df_corr_pres_mod[['presentation_module', 'number_of_posts']]
 df_corr_pres_mod = df_corr_pres_mod.rename(columns={'number_of_posts': 'r_squared'})
 df_corr_pres_mod['r_squared'] = df_corr_pres_mod['r_squared'] ** 2
 df_corr_pres_mod = df_corr_pres_mod.sort_values(by='r_squared', ascending=False)
+print(df_corr_pres_mod.head(20))
 
 ##Join to base table
+df_pres_mod_final = pandas.merge(left=df_pres_mod_base, right=df_corr_pres_mod, how='inner')
+print(df_pres_mod_final.head(20))
 
-
-
-
-
-
+##Export to df_corr_sub_vertical
+df_pres_mod_final.to_csv('/Users/jdeswardt/Documents/projects/discussion_forum_driver_analysis/df_pres_mod_final.csv')
 
 ################################################################################################################################################################
 ##11.) DATA SOURCE FOR COURSE MODULE
@@ -951,10 +955,8 @@ rdw_conn = psycopg2.connect(user=config['USER_LA']['RDW_PROD'],
 
 ##Sql query
 sql = """
-SELECT A.university AS la_university,
-       A.course_name AS presentation_abbreviation,
-       A.course_id AS vle_course_id,
-       A.course_module_id,
+SELECT CONCAT(SPLIT_PART(A.course_name, '-', 1), '-', SPLIT_PART(A.course_name, '-', 2)) AS course_abbreviation,
+       A.module_nr_from_name,
        A.module_name,
        ROUND(AVG(B.module_grade), 2) AS average_grade,
        SUM(all_posts) AS number_of_posts
@@ -972,15 +974,21 @@ AND LOWER(A.activity_name) NOT LIKE '%practical exercise%'
 AND LOWER(A.activity_name) NOT LIKE '%final assignment%'
 AND LOWER(A.activity_name) NOT LIKE '%orientation%'
 AND B.module_grade IS NOT NULL
-GROUP BY A.university,
-         A.course_name,
-         A.course_id,
-         A.course_module_id,
+GROUP BY CONCAT(SPLIT_PART(A.course_name, '-', 1), '-', SPLIT_PART(A.course_name, '-', 2)),
+         A.module_nr_from_name,
          A.module_name;
 """
 
 ##Create pandas dataframe
 df_cour_mod_base = pandas.read_sql_query(sql, rdw_conn)
+print(df_cour_mod_base.head(20))
+
+##Concatenate two strings
+df_cour_mod_base['course_module'] = df_cour_mod_base['course_abbreviation'].map(str) + ' ' + df_cour_mod_base['module_name']
+print(df_cour_mod_base.head(20))
+
+##Select specific columns
+df_cour_mod_base = df_cour_mod_base[['course_module', 'number_of_posts', 'average_grade']]
 print(df_cour_mod_base.head(20))
 
 ##Correlation creation
@@ -992,14 +1000,9 @@ rdw_conn = psycopg2.connect(user=config['USER_LA']['RDW_PROD'],
 
 ##Sql query
 sql = """
-SELECT A.university AS la_university,
-       A.course_name AS presentation_abbreviation,
-       A.course_id AS vle_course_id,
-       A.course_module_id,
+SELECT CONCAT(SPLIT_PART(A.course_name, '-', 1), '-', SPLIT_PART(A.course_name, '-', 2)) AS course_abbreviation,
        A.module_name,
-       A.activity_name,
-       A.user_id AS vle_user_id,
-       A.user_role,
+       A.module_nr_from_name,
        CONCAT(A.firstname, ' ', A.lastname) AS student_name,
        B.module_grade,
        SUM(all_posts) AS number_of_posts
@@ -1017,15 +1020,9 @@ AND LOWER(A.activity_name) NOT LIKE '%practical exercise%'
 AND LOWER(A.activity_name) NOT LIKE '%final assignment%'
 AND LOWER(A.activity_name) NOT LIKE '%orientation%'
 AND B.module_grade IS NOT NULL
-GROUP BY A.university,
-         A.course_name,
-         A.course_id,
-         A.course_module_id,
-         A.module_nr_from_name,
+GROUP BY CONCAT(SPLIT_PART(A.course_name, '-', 1), '-', SPLIT_PART(A.course_name, '-', 2)),
          A.module_name,
-         A.activity_name,
-         A.user_id,
-         A.user_role,
+         A.module_nr_from_name,
          CONCAT(A.firstname, ' ', A.lastname),
          B.module_grade;
 """
@@ -1045,9 +1042,15 @@ print(df_cour_mod.head(20))
 df_corr_cour_mod = pandas.DataFrame(df_cour_mod.groupby('course_module')[['module_grade', 'number_of_posts']].corr().iloc[0::2,-1]).reset_index()
 
 ##Edit resulting dataframe
-df_corr_cour_mod = df_corr_cour_mod[['presentation_module', 'number_of_posts']]
+df_corr_cour_mod = df_corr_cour_mod[['course_module', 'number_of_posts']]
 df_corr_cour_mod = df_corr_cour_mod.rename(columns={'number_of_posts': 'r_squared'})
 df_corr_cour_mod['r_squared'] = df_corr_cour_mod['r_squared'] ** 2
 df_corr_cour_mod = df_corr_cour_mod.sort_values(by='r_squared', ascending=False)
+print(df_corr_cour_mod.head(20))
 
 ##Join to base table
+df_cour_mod_final = pandas.merge(left=df_cour_mod_base, right=df_corr_cour_mod, how='inner')
+print(df_cour_mod_final.head(20))
+
+##Export to df_corr_sub_vertical
+df_cour_mod_final.to_csv('/Users/jdeswardt/Documents/projects/discussion_forum_driver_analysis/df_cour_mod_final.csv')
