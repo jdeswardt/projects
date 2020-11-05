@@ -16,7 +16,7 @@ import plotly.express
 
 ##Connect config file
 config = configparser.ConfigParser()
-config_file = str(pathlib.Path.home())+'/Documents/projects/useful_stuff/config.ini'
+config_file = str(pathlib.Path.home())+'/config.ini'
 config.read(config_file)
 
 ################################################################################################################################################################
